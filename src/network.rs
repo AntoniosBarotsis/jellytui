@@ -1,7 +1,11 @@
 use crate::app::{AppEvent, Episode, Show, WorkerAction};
 use reqwest::Client;
 use serde::Deserialize;
-use tokio::io::AsyncReadExt;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::process::Command;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 // --- Jellyfin API Deserialization Structs ---
@@ -44,6 +48,8 @@ pub(crate) async fn run_network_worker(
   let jellyfin_url = std::env::var("JELLYFIN_URL").expect("JELLYFIN_URL must be set in .env");
   let api_key = std::env::var("JELLYFIN_API_KEY").expect("JELLYFIN_API_KEY must be set in .env");
   let user_id = std::env::var("JELLYFIN_USER_ID").expect("JELLYFIN_USER_ID must be set in .env");
+  let debug_mode =
+    std::env::var("DEBUG").is_ok_and(|el| el.parse::<bool>().expect("Could not parse DEBUG"));
 
   let auth_header = format!("MediaBrowser Token=\"{api_key}\"");
 
@@ -167,17 +173,17 @@ pub(crate) async fn run_network_worker(
         let user_id = user_id.clone();
 
         let _t = tokio::spawn(async move {
-          use std::fs::OpenOptions;
-          use std::io::Write;
-          use std::process::Stdio;
-          use tokio::io::{AsyncBufReadExt, BufReader};
-          use tokio::process::Command;
-
-          let mut debug_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("mpv_debug.log")
-            .expect("Could not create debug file!");
+          let mut debug_file: Box<dyn Write + Send> = if debug_mode {
+            Box::new(
+              OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("mpv_debug.log")
+                .expect("Could not create debug file!"),
+            )
+          } else {
+            Box::new(std::io::sink())
+          };
 
           let _e = writeln!(debug_file, "\n--- STARTING NEW MPV SESSION ---");
 
