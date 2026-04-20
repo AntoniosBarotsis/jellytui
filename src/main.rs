@@ -23,7 +23,7 @@ use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-  let _e = dotenvy::dotenv()?;
+  let _e = dotenvy::dotenv();
 
   enable_raw_mode()?;
   let mut stdout = io::stdout();
