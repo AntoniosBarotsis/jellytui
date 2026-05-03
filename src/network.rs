@@ -249,10 +249,11 @@ pub(crate) async fn run_network_worker(
           // Main loop watching stdout
           if let Some(stderr) = child.stderr.take() {
             let mut reader = BufReader::new(stderr);
-            let mut line = String::new();
             let mut last_reported_time = 0;
 
-            while let Ok(bytes_read) = reader.read_line(&mut line).await {
+            let mut buf = Vec::<u8>::new();
+            while let Ok(bytes_read) = reader.read_until(b'\r', &mut buf).await {
+              let line = String::from_utf8(buf.clone()).expect("Could not parse bytes to string");
               if bytes_read == 0 {
                 break;
               }
@@ -267,50 +268,80 @@ pub(crate) async fn run_network_worker(
 
                   #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
                   if let Ok(seconds) = time_str_clean.parse::<f64>().map(|s| s as u64)
-                    && seconds.saturating_sub(last_reported_time) >= 10
+                    && seconds.saturating_sub(last_reported_time) >= 15
                   {
                     last_reported_time = seconds;
+
+                    update_watch_progress(
+                      &jellyfin_url,
+                      &auth_header,
+                      client.clone(),
+                      &episode_id,
+                      &user_id,
+                      &mut debug_file,
+                      last_reported_time,
+                    )
+                    .await;
                   }
                 }
               }
-              line.clear();
             }
+            buf.clear();
 
-            // Send one update when the window closes to lock in the state
-            // NEW: Send one final update when the window closes to lock in the state
-            if last_reported_time > 0 {
-              let ticks = last_reported_time * 10_000_000;
-
-              // The proper API call for stopping playback is a DELETE request
-              let stop_url = format!(
-                "{jellyfin_url}/Users/{user_id}/PlayingItems/{episode_id}?PositionTicks={ticks}"
-              );
-
-              let response = client
-                .delete(&stop_url)
-                .header("Authorization", &auth_header)
-                .send()
-                .await;
-
-              match response {
-                Ok(res) => {
-                  let _e = writeln!(
-                    debug_file,
-                    "Sent final stop tick at {} sec | Jellyfin Status: {}",
-                    last_reported_time,
-                    res.status()
-                  );
-                }
-                Err(e) => {
-                  let _e = writeln!(debug_file, "Failed to send stop tick: {e}");
-                }
-              }
-            }
+            // update_watch_progress(
+            //   jellyfin_url,
+            //   auth_header,
+            //   client,
+            //   episode_id,
+            //   user_id,
+            //   &mut debug_file,
+            //   last_reported_time,
+            // )
+            // .await;
           }
 
           let _e = child.wait().await;
           let _e = writeln!(debug_file, "--- MPV SESSION ENDED ---");
         });
+      }
+    }
+  }
+}
+
+// Could not decide if i want this in a loop or not so i made it into a func i can move around xd
+async fn update_watch_progress(
+  jellyfin_url: &str,
+  auth_header: &str,
+  client: Client,
+  episode_id: &str,
+  user_id: &str,
+  debug_file: &mut Box<dyn Write + Send + 'static>,
+  last_reported_time: u64,
+) {
+  if last_reported_time > 0 {
+    let ticks = last_reported_time * 10_000_000;
+
+    // The proper API call for stopping playback is a DELETE request
+    let stop_url =
+      format!("{jellyfin_url}/Users/{user_id}/PlayingItems/{episode_id}?PositionTicks={ticks}");
+
+    let response = client
+      .delete(&stop_url)
+      .header("Authorization", auth_header)
+      .send()
+      .await;
+
+    match response {
+      Ok(res) => {
+        let _e = writeln!(
+          debug_file,
+          "Sent final stop tick at {} sec | Jellyfin Status: {}",
+          last_reported_time,
+          res.status()
+        );
+      }
+      Err(e) => {
+        let _e = writeln!(debug_file, "Failed to send stop tick: {e}");
       }
     }
   }

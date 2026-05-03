@@ -6,8 +6,8 @@ A very opinionated *Shows*-only TUI for [Jellyfin].
 
 - 3-pane layout showing `Shows > Seasons > Episodes`, you can navigate this with your arrow keys
 - each episode displays its runtime in `mins:secs`
-- ability to spawn an mpv player for watching the selected episode by pressing `s`. Upon closing mpv, the point where
-  you left off is saved on your jellyfin server so you can resume later.
+- ability to spawn an mpv player for watching the selected episode by pressing `s`. ~~Upon closing mpv, the point where
+  you left off is saved on your jellyfin server so you can resume~~ Every 15 seconds your watch progress is updated on your jellyfin server.
 - mark episode as watched/unwatched manually with `space` (if you've watched most of it, jellyfin should mark it as watched automatically)
 - force refresh a show's cache with `r`
 
