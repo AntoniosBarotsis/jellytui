@@ -246,58 +246,56 @@ pub(crate) async fn run_network_worker(
             });
           }
 
-          // Main loop watching stdout
-          if let Some(stderr) = child.stderr.take() {
-            let mut reader = BufReader::new(stderr);
+          // Main loop watching stderr
+          if let Some(mut stderr) = child.stderr.take() {
             let mut last_reported_time = 0;
 
-            let mut buf = Vec::<u8>::new();
-            while let Ok(bytes_read) = reader.read_until(b'\r', &mut buf).await {
-              let line = String::from_utf8(buf.clone()).expect("Could not parse bytes to string");
+            let mut buf = [0; 1024];
+            let mut string_buffer = String::new();
+
+            while let Ok(bytes_read) = stderr.read(&mut buf).await {
               if bytes_read == 0 {
-                break;
+                break; // EOF / mpv closed
               }
 
-              if line.contains("STATUS:") {
-                // Use `rfind` to get the LAST occurrence of STATUS in the chunk
-                if let Some(idx) = line.rfind("STATUS:") {
-                  let time_str_dirty = &line[idx + 7..];
+              let chunk = String::from_utf8_lossy(&buf[..bytes_read]);
+              string_buffer.push_str(&chunk);
 
-                  // Split by the first carriage return and take the clean number
-                  let time_str_clean = time_str_dirty.split('\r').next().unwrap_or("").trim();
+              if let Some(idx) = string_buffer.rfind("STATUS:") {
+                let time_str_dirty = &string_buffer[idx + 7..];
 
-                  #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-                  if let Ok(seconds) = time_str_clean.parse::<f64>().map(|s| s as u64)
-                    && seconds.saturating_sub(last_reported_time) >= 15
-                  {
-                    last_reported_time = seconds;
+                // Extract ONLY the digits and decimal point, ignoring any \r, \n, or spaces
+                let time_str_clean: String = time_str_dirty
+                  .chars()
+                  .take_while(|c| c.is_ascii_digit() || *c == '.')
+                  .collect();
 
-                    update_watch_progress(
-                      &jellyfin_url,
-                      &auth_header,
-                      client.clone(),
-                      &episode_id,
-                      &user_id,
-                      &mut debug_file,
-                      last_reported_time,
-                    )
-                    .await;
-                  }
+                #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+                if let Ok(seconds) = time_str_clean.parse::<f64>().map(|s| s as u64)
+                  && seconds.saturating_sub(last_reported_time) >= 15
+                {
+                  last_reported_time = seconds;
+
+                  update_watch_progress(
+                    &jellyfin_url,
+                    &auth_header,
+                    client.clone(),
+                    &episode_id,
+                    &user_id,
+                    &mut debug_file,
+                    last_reported_time,
+                  )
+                  .await;
                 }
+
+                // We successfully parsed the status, clear the buffer for the next chunk
+                string_buffer.clear();
+              } else if string_buffer.len() > 4096 {
+                // Safety net: if mpv spams a bunch of non-status logs, clear the
+                // buffer so it doesn't grow infinitely in memory.
+                string_buffer.clear();
               }
             }
-            buf.clear();
-
-            // update_watch_progress(
-            //   jellyfin_url,
-            //   auth_header,
-            //   client,
-            //   episode_id,
-            //   user_id,
-            //   &mut debug_file,
-            //   last_reported_time,
-            // )
-            // .await;
           }
 
           let _e = child.wait().await;
