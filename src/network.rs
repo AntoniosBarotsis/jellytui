@@ -25,7 +25,7 @@ struct JellyfinItem {
   season_name: Option<String>,
   #[serde(rename = "UserData")]
   user_data: Option<JellyfinUserData>,
-  #[serde(rename = "RunTimeTicks")]
+  #[serde(rename = "RunTimeTicks", default)]
   run_time_ticks: u64,
 }
 
