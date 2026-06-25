@@ -2,6 +2,8 @@
 
 A very opinionated *Shows*-only TUI for [Jellyfin].
 
+![screenshot](./screenshot.webp)
+
 ## Features
 
 - 3-pane layout showing `Shows > Seasons > Episodes`, you can navigate this with your arrow keys
